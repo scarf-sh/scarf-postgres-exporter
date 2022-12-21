@@ -1,6 +1,6 @@
-import { spawn } from 'child_process';
-import fs from 'fs';
-import http from 'https';
+import { spawn } from 'child_process'
+import fs from 'fs'
+import http from 'https'
 
 const scarfApiToken = process.env.SCARF_API_TOKEN
 if (!scarfApiToken) throw "missing env variable: SCARF_API_TOKEN"
@@ -11,7 +11,7 @@ if (!scarfEntity) throw "missing env variable: SCARF_ENTITY_NAME"
 const DB = process.env.PSQL_CONN_STRING
 if (!DB) throw "missing env variable: PSQL_CONN_STRING"
 
-const defaultBackfillDays = 31
+const defaultBackfillDays = parseInt(process.env.BACKFILL_DAYS || '31')
 
 function buildPath(startDate: string, endDate: string) {
   return `/v2/packages/${scarfEntity}/events?start_date=${startDate}&end_date=${endDate}`
@@ -20,39 +20,38 @@ function buildPath(startDate: string, endDate: string) {
 async function runCommand(command: string): Promise<string> {
   console.log(`running command: ${command}`)
   return new Promise((resolve, reject) => {
-    const process = spawn('bash', ['-c', command]);
+    const process = spawn('bash', ['-c', command])
 
-    let output = '';
+    let output = ''
     process.stdout.on('data', (data: any) => {
-      output += data.toString();
-    });
+      output += data.toString()
+    })
 
     process.on('close', (code: any) => {
       if (code === 0) {
-        resolve(output);
+        resolve(output)
       } else {
-        reject(new Error(`Command failed with code ${code}`));
+        reject(new Error(`Command failed with code ${code}`))
       }
-    });
-  });
+    })
+  })
 }
 
 async function main() {
-
-  const tableDef = fs.readFileSync('./table-def.sql');
+  const tableDef = fs.readFileSync('./table-def.sql')
   const yesterday = daysAgoString(1)
-  const getLastImportedDate = formatPSQLBash(`select cast(max(time) as date) from scarf_events_raw;`)
+  const getLastImportedDate = formatPSQLBash(`select cast(max(time) as date) from scarf_events_raw`)
 
   await runCommand(formatPSQLBash(tableDef.toString()))
   console.log('table created')
   const lastImportedDate = (await runCommand(getLastImportedDate)).trim() || daysAgoString(defaultBackfillDays)
   if (lastImportedDate === yesterday) {
     console.log('All caught up until yesterday. Nothing to do.')
-    return;
+    return
   }
   console.log(`lastImportedDate: ${lastImportedDate}`)
   console.log(`downloading CSV`)
-  await downloadCSV(buildPath(dayAfter(lastImportedDate), yesterday), yesterday)
+  await downloadCSV(buildPath(dayAfter(lastImportedDate + 'T00:00:00'), yesterday), yesterday)
   console.log('csv downloaded')
   console.log('importing CSV into postgres')
   await runCommand(formatPSQLBash(`\\copy scarf_events_raw FROM './${yesterday}.csv' WITH (FORMAT CSV, HEADER true)`))
@@ -60,45 +59,48 @@ async function main() {
 }
 
 async function downloadCSV(path: string, csvName: string): Promise<void> {
-  const file = fs.createWriteStream(`${csvName}.csv`);
+  const file = fs.createWriteStream(`${csvName}.csv`)
   console.log(`Downloading CSV from ${path}`)
   return new Promise((resolve, reject) => {
-    const options = { hostname: 'api.scarf.sh', path, headers: { 'Authorization': `Bearer ${scarfApiToken}`, 'Content-Type': 'application/json' } }
+    const options = {
+      hostname: 'api.scarf.sh', path,
+      headers: { 'Authorization': `Bearer ${scarfApiToken}`, 'Content-Type': 'application/json' }
+    }
 
     http.get(options, function(response: any) {
 
       if (response.statusCode !== 200) {
         console.log(`Response code: ${response.statusCode}`)
-        let data = '';
+        let data = ''
         response.on('data', (chunk: any) => {
-          data += chunk;
-        });
+          data += chunk
+        })
         response.on('end', () => {
-          console.log(data);
+          console.log(data)
           reject('non 200 response from Scarf. Check your auth token')
-        });
+        })
       }
 
-      response.pipe(file);
+      response.pipe(file)
 
       file.on('error', (err: any) => {
-        file.close();
-        console.error(`Error downloading CSV: ${err}`);
-        reject(err);
+        file.close()
+        console.error(`Error downloading CSV: ${err}`)
+        reject(err)
       })
 
       file.on("finish", () => {
-        file.close();
-        console.log("Download Completed");
-        resolve();
-      });
-    });
+        file.close()
+        console.log("Download Completed")
+        resolve()
+      })
+    })
   })
 }
 
 function daysAgoString(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
+  const d = new Date()
+  d.setDate(d.getDate() - n)
   return formatDate(d)
 }
 
@@ -108,11 +110,11 @@ function formatDate(d: Date) {
   const year = d.getFullYear()
 
   if (month.length < 2)
-    month = '0' + month;
+    month = '0' + month
   if (day.length < 2)
-    day = '0' + day;
+    day = '0' + day
 
-  return [year, month, day].join('-');
+  return [year, month, day].join('-')
 }
 
 function dayAfter(dString: string): string {
@@ -126,4 +128,4 @@ function formatPSQLBash(command: string) {
   return `psql ${DB} -qtAX -c "${command}"`
 }
 
-main();
+main()

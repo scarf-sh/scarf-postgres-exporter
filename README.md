@@ -10,10 +10,16 @@ On an empty DB, the last 31 days of data will be backfilled, not including today
 
 Ensure these environment variables are set:
 
-```
+```bash
 SCARF_API_TOKEN=<your api token>
 SCARF_ENTITY_NAME=<Scarf username or org name>
 PSQL_CONN_STRING=<PSQL connection string>
+```
+
+You can optionally set:
+
+```bash
+BACKFILL_DAYS=31 #defaults to 31 if not set
 ```
 
 Then run: 
