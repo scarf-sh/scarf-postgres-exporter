@@ -1,0 +1,23 @@
+{
+  "name": "scarf-postgres-exporter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "@scarf/scarf": "^1.1.1",
+    "typescript": "^4.9.4"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.17"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "buildAndRun": "npx tsc && node index.js"
+  },
+  "scarfSettings": {
+    "allowTopLevel": true
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
