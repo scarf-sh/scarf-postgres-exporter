@@ -28,7 +28,7 @@ Then run:
 
 ```bash
 $ npm i
-$ npm buildAndRun
+$ npm run buildAndRun
 ```
 
 ## Contributing
