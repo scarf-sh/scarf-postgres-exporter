@@ -18,7 +18,6 @@ function buildPath(startDate: string, endDate: string) {
 }
 
 async function runCommand(command: string): Promise<string> {
-  console.log(`running command: ${command}`)
   return new Promise((resolve, reject) => {
     const process = spawn('bash', ['-c', command])
 
