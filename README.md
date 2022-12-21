@@ -22,6 +22,8 @@ You can optionally set:
 BACKFILL_DAYS=31 #defaults to 31 if not set
 ```
 
+Note, the `psql` command must be available in your environment separately.
+
 Then run: 
 
 ```bash
