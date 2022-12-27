@@ -31,6 +31,18 @@ $ npm i
 $ npm run buildAndRun
 ```
 
+
+### Docker
+
+```bash
+$ docker run \
+    -e SCARF_API_TOKEN=<> \
+    -e SCARF_ENTITY_NAME=<>\
+    -e PSQL_CONN_STRING=<> \
+    -e BACKFILL_DAYS=<> \
+   scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter
+```
+
 ## Contributing
 
 Code contributions are more than welcome! Please open an issue first to discuss your change before getting started. Feel free to jump into [Scarf's community Slack](https://tinyurl.com/scarf-community-slack) if you'd like to chat with us directly. 
