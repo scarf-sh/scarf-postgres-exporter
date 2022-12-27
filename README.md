@@ -43,9 +43,40 @@ $ docker run \
    scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter
 ```
 
+## Configuring on GitHub Actions
+
+You can use GitHub Actions `cron` functionality to run this exporter periodically in your GitHub repo with an action like this:
+
+```yaml
+name: Export Scarf data
+on:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  export-scarf-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker://scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter:latest
+        env:
+          SCARF_API_TOKEN: ${{ secrets.SCARF_API_TOKEN }}
+          SCARF_ENTITY_NAME: {Your Scarf user or org name}
+          PSQL_CONN_STRING: ${{ secrets.PSQL_CONN_STRING }}
+```
+
 ## Contributing
 
 Code contributions are more than welcome! Please open an issue first to discuss your change before getting started. Feel free to jump into [Scarf's community Slack](https://tinyurl.com/scarf-community-slack) if you'd like to chat with us directly. 
+
+### Publishing the Docker container
+
+The container is published to GHCR and distriburted via the `scarf.docker.scarf.sh` endpoint. 
+
+Ensure you are building the container for architechures besides your own like so:
+
+```bash
+$ docker buildx build --platform linux/amd64,linux/arm64 --push -t ghcr.io/scarf-sh/scarf-postgres-exporter .
+```
 
 ## License
 
