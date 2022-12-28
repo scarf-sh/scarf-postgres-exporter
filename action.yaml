@@ -1,0 +1,26 @@
+name: Scarf Postgres Exporter Action
+author: Scarf Systems, Inc.
+description: Exports your Scarf data and loads it into a PostgreSQL database
+inputs:
+  scarfAPIToken: 
+    required: true
+    description: 'Your Scarf API token'
+  scarfEntityName:
+    required: true
+    description: 'Scarf username or org name'
+  psqlConnString:
+    required: true
+    description: 'psql connection URI'
+  backfillDays:
+    required: false
+    description: 'Number of days to backfill. Defaults to 31'
+    default: 31
+
+runs:
+  using: 'docker'
+  image: 'docker://scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter:latest'
+  env:
+    SCARF_API_TOKEN: ${{ inputs.scarfAPIToken }}
+    SCARF_ENTITY_NAME: ${{ inputs.scarfEntityName }}
+    PSQL_CONN_STRING: ${{ inputs.psqlConnString }}
+    BACKFILL_DAYS: ${{ inputs.backfillDays }}
