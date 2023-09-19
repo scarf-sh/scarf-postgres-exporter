@@ -22,15 +22,22 @@ async function runCommand(command: string): Promise<string> {
     const process = spawn('bash', ['-c', command])
 
     let output = ''
+    let errorOutput = ''
+
     process.stdout.on('data', (data: any) => {
       output += data.toString()
+    })
+
+    process.stderr.on('data', (data: any) => {
+      errorOutput += data.toString()
     })
 
     process.on('close', (code: any) => {
       if (code === 0) {
         resolve(output)
       } else {
-        reject(new Error(`Command failed with code ${code}`))
+        const errorMessage = `Command failed with code ${code}: ${errorOutput}`
+        reject(new Error(errorMessage))
       }
     })
   })
