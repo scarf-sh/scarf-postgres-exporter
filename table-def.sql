@@ -19,5 +19,6 @@ create table if not exists
     origin_company text,
     origin_domain text,
     dnt boolean,
+    confidence numeric,
     endpoint_id text
   );
