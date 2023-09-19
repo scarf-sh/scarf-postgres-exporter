@@ -18,5 +18,6 @@ create table if not exists
     origin_connection_type text,
     origin_company text,
     origin_domain text,
-    dnt boolean
+    dnt boolean,
+    endpoint_id text
   );
