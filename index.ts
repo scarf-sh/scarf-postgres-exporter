@@ -60,7 +60,30 @@ async function main() {
   await downloadCSV(buildPath(dayAfter(lastImportedDate + 'T00:00:00'), yesterday), yesterday)
   console.log('csv downloaded')
   console.log('importing CSV into postgres')
-  await runCommand(formatPSQLBash(`\\copy scarf_events_raw FROM './${yesterday}.csv' WITH (FORMAT CSV, HEADER true)`))
+  const fields = [
+    "id",
+    "type",
+    "package",
+    "version",
+    "time",
+    "referer",
+    "user_agent",
+    "platform",
+    "variables",
+    "origin_id",
+    "origin_latitude",
+    "origin_longitude",
+    "origin_country",
+    "origin_city",
+    "origin_postal",
+    "origin_connection_type",
+    "origin_company",
+    "origin_domain",
+    "dnt",
+    "confidence",
+    "endpoint_id"
+  ].join(',')
+  await runCommand(formatPSQLBash(`\\copy scarf_events_raw (${fields}) FROM './${yesterday}.csv' WITH (FORMAT CSV, HEADER true)`))
   console.log('done!')
 }
 
