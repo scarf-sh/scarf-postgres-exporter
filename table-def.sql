@@ -8,6 +8,7 @@ create table if not exists
     time timestamp,
     referer text,
     user_agent text,
+    platform text,
     variables text,
     origin_id text,
     origin_latitude numeric,
