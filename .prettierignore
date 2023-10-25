@@ -34,8 +34,3 @@ yarn-error.log*
 
 # vercel
 .vercel
-
-# Generated code
-src/api-client/v2-public/
-src/api-client/v2-internal/
-src/api-client/v2-anonymous/

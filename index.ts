@@ -1,5 +1,6 @@
-import { spawn } from "child_process";
+import { ChildProcess, spawn } from "child_process";
 import fs from "fs";
+import { IncomingMessage } from "http";
 import http from "https";
 
 const scarfApiToken = process.env.SCARF_API_TOKEN;
@@ -19,20 +20,24 @@ function buildPath(startDate: string, endDate: string) {
 
 async function runCommand(command: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const process = spawn("bash", ["-c", command]);
+    const process: ChildProcess = spawn("bash", ["-c", command]);
 
     let output = "";
     let errorOutput = "";
 
-    process.stdout.on("data", (data: any) => {
-      output += data.toString();
-    });
+    if (process.stdout) {
+      process.stdout.on("data", (data: Buffer) => {
+        output += data.toString();
+      });
+    }
 
-    process.stderr.on("data", (data: any) => {
-      errorOutput += data.toString();
-    });
+    if (process.stderr) {
+      process.stderr.on("data", (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+    }
 
-    process.on("close", (code: any) => {
+    process.on("close", (code: number) => {
       if (code === 0) {
         resolve(output);
       } else {
@@ -101,6 +106,7 @@ async function main() {
 async function downloadCSV(path: string, csvName: string): Promise<void> {
   const file = fs.createWriteStream(`${csvName}.csv`);
   console.log(`Downloading CSV from ${path}`);
+
   return new Promise((resolve, reject) => {
     const options = {
       hostname: "api.scarf.sh",
@@ -111,11 +117,11 @@ async function downloadCSV(path: string, csvName: string): Promise<void> {
       },
     };
 
-    http.get(options, function (response: any) {
+    http.get(options, function (response: IncomingMessage) {
       if (response.statusCode !== 200) {
         console.log(`Response code: ${response.statusCode}`);
         let data = "";
-        response.on("data", (chunk: any) => {
+        response.on("data", (chunk: Buffer) => {
           data += chunk;
         });
         response.on("end", () => {
@@ -126,7 +132,7 @@ async function downloadCSV(path: string, csvName: string): Promise<void> {
 
       response.pipe(file);
 
-      file.on("error", (err: any) => {
+      file.on("error", (err: NodeJS.ErrnoException) => {
         file.close();
         console.error(`Error downloading CSV: ${err}`);
         reject(err);
