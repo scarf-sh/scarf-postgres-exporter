@@ -15,14 +15,12 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "strictPropertyInitialization": false,
-    "jsx": "preserve",
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
     },
     "incremental": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "cypress"],
-  "moduleResolution": ["node_modules", ".next", "node"]
+  "exclude": ["node_modules"],
+  "moduleResolution": ["node_modules", "node"]
 }
