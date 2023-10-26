@@ -1,6 +1,6 @@
 {
   "name": "scarf-postgres-exporter",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Script to export data from Scarf into any PostgreSQL database",
   "keywords": [],
   "author": "Scarf",
