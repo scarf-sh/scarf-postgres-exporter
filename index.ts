@@ -94,6 +94,7 @@ async function main() {
     "dnt",
     "confidence",
     "endpoint_id",
+    "origin_state"
   ].join(",");
   await runCommand(
     formatPSQLBash(
