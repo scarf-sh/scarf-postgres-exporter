@@ -6,11 +6,12 @@
   "author": "Scarf",
   "license": "Apache 2.0",
   "main": "index.ts",
+  "type": "module",
   "engines": {
     "node": ">=20.0.0 <21.0.0"
   },
   "scripts": {
-    "buildAndRun": "npx tsc && node index.ts",
+    "buildAndRun": "npx tsc && npx tsx index.ts",
     "lint": "eslint . --ext .ts",
     "lint:cache": "eslint . --ext .ts --cache",
     "lint:fix": "eslint . --ext .ts --fix",
@@ -29,7 +30,8 @@
     "eslint-config-prettier": "9.0.0",
     "eslint-plugin-simple-import-sort": "10.0.0",
     "eslint-plugin-unused-imports": "3.0.0",
-    "prettier": "3.0.3"
+    "prettier": "3.0.3",
+    "tsx": "^4.7.0"
   },
   "scarfSettings": {
     "allowTopLevel": true
