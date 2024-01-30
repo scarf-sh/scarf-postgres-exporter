@@ -5,12 +5,12 @@
   "keywords": [],
   "author": "Scarf",
   "license": "Apache 2.0",
-  "main": "index.ts",
+  "main": "index.js",
   "engines": {
     "node": ">=20.0.0 <21.0.0"
   },
   "scripts": {
-    "buildAndRun": "npx tsc && node index.ts",
+    "buildAndRun": "npx tsc && node index.js",
     "lint": "eslint . --ext .ts",
     "lint:cache": "eslint . --ext .ts --cache",
     "lint:fix": "eslint . --ext .ts --fix",
