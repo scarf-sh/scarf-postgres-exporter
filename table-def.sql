@@ -15,6 +15,7 @@ create table if not exists
     origin_longitude numeric,
     origin_country text,
     origin_city text,
+    origin_state text,
     origin_postal text,
     origin_connection_type text,
     origin_company text,
