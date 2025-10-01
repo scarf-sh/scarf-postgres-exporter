@@ -26,5 +26,3 @@ create table if not exists
     origin_state text,
     mtc_quota_exceeded boolean
   );
-
--- id,type,package,pixel,version,time,referer,user_agent,platform,variables,origin_id,origin_latitude,origin_longitude,origin_country,origin_city,origin_postal,origin_connection_type,origin_company,origin_domain,dnt,confidence,endpoint_id,origin_state,mtc_quota_exceeded
