@@ -1,9 +1,19 @@
-from alpine:3.17
+FROM node:20-alpine
 
-RUN apk --no-cache add --update bash postgresql-client git npm busybox-extras
+# Install runtime deps
+RUN apk add --no-cache bash postgresql-client
 
-CMD bash -c "git clone https://github.com/scarf-sh/scarf-postgres-exporter && cd scarf-postgres-exporter && npm i && npm run buildAndRun"
+WORKDIR /app
 
+# Install dependencies first (leverage Docker layer cache)
+COPY package*.json tsconfig.json ./
+RUN npm ci
+
+# Copy application sources
+COPY index.ts table-def.sql ./
+
+# Default command compiles TS and runs the app
+CMD ["bash", "-lc", "npm run buildAndRun"]
 
 
 
