@@ -76,6 +76,7 @@ async function main() {
     "id",
     "type",
     "package",
+    "pixel",
     "version",
     "time",
     "referer",
@@ -94,7 +95,8 @@ async function main() {
     "dnt",
     "confidence",
     "endpoint_id",
-    "origin_state"
+    "origin_state",
+    "mtc_quota_exceeded"
   ].join(",");
   await runCommand(
     formatPSQLBash(
