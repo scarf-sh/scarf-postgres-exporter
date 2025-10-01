@@ -13,7 +13,7 @@ RUN npm ci
 COPY index.ts table-def.sql ./
 
 # Default command compiles TS and runs the app
-CMD ["bash", "-lc", "npm run buildAndRun"]
+CMD ["bash", "-c", "npm run buildAndRun"]
 
 
 
