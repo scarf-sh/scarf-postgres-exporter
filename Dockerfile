@@ -12,8 +12,13 @@ RUN npm ci
 # Copy application sources
 COPY index.ts table-def.sql ./
 
-# Default command compiles TS and runs the app
-CMD ["bash", "-c", "npm run buildAndRun"]
+# Build at image build time so runtime doesn't depend on CWD/npm
+RUN npx tsc
 
+# Add an entrypoint that ensures we run from /app regardless of external --workdir
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 
 
