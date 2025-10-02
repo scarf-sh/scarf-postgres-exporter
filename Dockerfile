@@ -10,7 +10,8 @@ COPY package*.json tsconfig.json ./
 RUN npm ci
 
 # Copy application sources
-COPY index.ts table-def.sql ./
+COPY src ./src
+COPY table-def.sql ./
 
 # Build at image build time so runtime doesn't depend on CWD/npm
 RUN npx tsc
@@ -20,5 +21,4 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-
 
