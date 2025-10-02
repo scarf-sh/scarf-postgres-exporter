@@ -61,16 +61,21 @@ async function main() {
   const lastImportedDate =
     (await runPSQL(getLastImportedDateSQL)).trim() ||
     daysAgoString(defaultBackfillDays);
-  if (lastImportedDate === yesterday) {
-    console.log("All caught up until yesterday. Nothing to do.");
+  // If we already imported data for yesterday or later (e.g., today), skip.
+  if (lastImportedDate >= yesterday) {
+    console.log("Already up to date. Nothing to do.");
     return;
   }
   console.log(`lastImportedDate: ${lastImportedDate}`);
+  // Determine date range: from the day after last import up through yesterday
+  const startDate = dayAfter(lastImportedDate + "T00:00:00");
+  const endDate = yesterday;
+  if (new Date(startDate) > new Date(endDate)) {
+    console.log(`Start date ${startDate} is after end date ${endDate}. Nothing to do.`);
+    return;
+  }
   console.log(`downloading CSV`);
-  await downloadCSV(
-    buildPath(dayAfter(lastImportedDate + "T00:00:00"), yesterday),
-    yesterday,
-  );
+  await downloadCSV(buildPath(startDate, endDate), yesterday);
   console.log("csv downloaded");
   console.log("importing CSV into postgres");
   const fields = [
