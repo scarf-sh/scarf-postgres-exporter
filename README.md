@@ -51,7 +51,7 @@ You can use GitHub Actions `cron` functionality to run this exporter periodicall
 name: Export Scarf data
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '0 12 * * *'
 
 jobs:
   export-scarf-data:
