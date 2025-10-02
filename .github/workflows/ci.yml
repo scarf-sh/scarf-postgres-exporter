@@ -107,12 +107,11 @@ jobs:
           PSQL_CONN_STRING: 'postgres://postgres:pass@postgres:5432/scarf'
 
       - name: Verify row imported
+        shell: bash
         run: |
+          # Query count; this asserts table exists and query succeeds.
           docker run --rm --network host postgres:15-alpine \
-            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "select to_regclass('public.scarf_events_raw') is not null" | tee exists.txt
-          OK=$(cat exists.txt | tr -d '[:space:]')
-          echo "Table exists: $OK"
-          if [ "$OK" != "t" ]; then
-            echo "Table scarf_events_raw not found — import likely failed."
-            exit 1
-          fi
+            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "select count(*) from scarf_events_raw" | tee count.txt
+          COUNT=$(tr -d '[:space:]' < count.txt)
+          echo "Row count in scarf_events_raw: $COUNT"
+          # Note: we do not fail on COUNT=0 to avoid flakiness on days with no events.
