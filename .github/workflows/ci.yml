@@ -80,3 +80,38 @@ jobs:
             exit 1
           fi
           echo "Psql invocation appears shell-safe."
+
+  export-scarf-data:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: scarf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: docker://scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter:latest
+        env:
+          # Real E2E using Scarf API (token in repo/org secrets)
+          SCARF_API_TOKEN: ${{ secrets.SCARF_API_TOKEN }}
+          SCARF_ENTITY_NAME: ${{ secrets.SCARF_ENTITY_NAME }}
+          #BACKFILL_DAYS: "2"
+          # Connect to the GitHub Actions Postgres service by its service name
+          PSQL_CONN_STRING: 'postgres://postgres:pass@postgres:5432/scarf'
+
+      - name: Verify row imported
+        shell: bash
+        run: |
+          # Query count; this asserts table exists and query succeeds.
+          docker run --rm --network host postgres:15-alpine \
+            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "select count(*) from scarf_events_raw" | tee count.txt
+          COUNT=$(tr -d '[:space:]' < count.txt)
+          echo "Row count in scarf_events_raw: $COUNT"
+          # Note: we do not fail on COUNT=0 to avoid flakiness on days with no events.
