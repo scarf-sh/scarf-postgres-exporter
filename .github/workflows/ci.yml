@@ -24,6 +24,10 @@ jobs:
           OUTPUT=$(docker run --rm -w /github/workspace scarf-postgres-exporter:ci 2>&1)
           STATUS=$?
           echo "Container exit code: ${STATUS}"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "ERROR: Container exited with code 0, but expected non-zero due to missing env var."
+            exit 1
+          fi
           echo "--- Begin Container Output ---"
           echo "$OUTPUT"
           echo "--- End Container Output ---"
