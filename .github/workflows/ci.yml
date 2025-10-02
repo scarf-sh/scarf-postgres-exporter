@@ -102,7 +102,7 @@ jobs:
           # Real E2E using Scarf API (token in repo/org secrets)
           SCARF_API_TOKEN: ${{ secrets.SCARF_API_TOKEN }}
           SCARF_ENTITY_NAME: ${{ secrets.SCARF_ENTITY_NAME }}
-          BACKFILL_DAYS: "2"
+          #BACKFILL_DAYS: "2"
           # Connect to the GitHub Actions Postgres service by its service name
           PSQL_CONN_STRING: 'postgres://postgres:pass@postgres:5432/scarf'
 
