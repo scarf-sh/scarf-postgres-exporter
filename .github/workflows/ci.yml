@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  build-and-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t scarf-postgres-exporter:ci .
+
+      - name: Smoke test with overridden workdir (simulates Actions)
+        shell: bash
+        run: |
+          set +e
+          # Run without required env so app exits early; we only assert error origin.
+          OUTPUT=$(docker run --rm -w /github/workspace scarf-postgres-exporter:ci 2>&1)
+          STATUS=$?
+          echo "Container exit code: ${STATUS}"
+          if [ "$STATUS" -eq 0 ]; then
+            echo "ERROR: Container exited with code 0, but expected non-zero due to missing env var."
+            exit 1
+          fi
+          echo "--- Begin Container Output ---"
+          echo "$OUTPUT"
+          echo "--- End Container Output ---"
+
+          # Must NOT be an npm/package.json ENOENT error.
+          if echo "$OUTPUT" | grep -Eqi "npm error|Could not read package.json|enoent.*package.json"; then
+            echo "Unexpected npm/package.json error detected. Entry point fix failed."
+            exit 1
+          fi
+
+          # Should fail fast due to missing env var from our app (expected in smoke test).
+          if echo "$OUTPUT" | grep -q "missing env variable: SCARF_API_TOKEN"; then
+            echo "Smoke test passed: entrypoint runs from /app and app executed."
+            exit 0
+          else
+            echo "Did not observe expected app error. Output above for debugging."
+            exit 1
+          fi
