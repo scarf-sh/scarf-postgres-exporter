@@ -46,3 +46,37 @@ jobs:
             echo "Did not observe expected app error. Output above for debugging."
             exit 1
           fi
+
+      - name: Security regression check (no bash -c spawn)
+        shell: bash
+        run: |
+          # Ensure we are not spawning a shell to run psql commands
+          # Limit search to source files to avoid matching this workflow text
+          if grep -R --include='*.ts' --include='*.js' -n -E "spawn\(['\"]bash['\"]" .; then
+            echo "Found shell-based spawn usage. This is unsafe for connection strings with special characters."
+            exit 1
+          fi
+          echo "No bash-based spawn usage detected."
+
+      - name: Injection-safe psql invocation with special chars
+        shell: bash
+        run: |
+          set +e
+          # Use a connection string with a semicolon to simulate special characters in passwords
+          OUTPUT=$(docker run --rm \
+            -e SCARF_API_TOKEN=dummy \
+            -e SCARF_ENTITY_NAME=dummy \
+            -e PSQL_CONN_STRING='postgres://user:p%40ss;word@localhost:5432/dbname' \
+            scarf-postgres-exporter:ci 2>&1)
+          STATUS=$?
+          echo "Container exit code: ${STATUS}"
+          echo "--- Begin Output ---"
+          echo "$OUTPUT"
+          echo "--- End Output ---"
+
+          # Must not show shell trying to execute -qtAX due to broken quoting
+          if echo "$OUTPUT" | grep -q "-qtAX: command not found"; then
+            echo "Detected unsafe shell splitting in psql invocation."
+            exit 1
+          fi
+          echo "Psql invocation appears shell-safe."
