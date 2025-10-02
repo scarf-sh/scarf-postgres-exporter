@@ -80,3 +80,12 @@ jobs:
             exit 1
           fi
           echo "Psql invocation appears shell-safe."
+
+  export-scarf-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker://scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter:latest
+        env:
+          SCARF_API_TOKEN: 'test'
+          SCARF_ENTITY_NAME: 'scarf'
+          PSQL_CONN_STRING: 'dummy'
