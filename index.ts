@@ -70,7 +70,7 @@ async function main() {
   // Determine date range: from the day after last import up through yesterday
   const startDate = dayAfter(lastImportedDate + "T00:00:00");
   const endDate = yesterday;
-  if (startDate > endDate) {
+  if (new Date(startDate) > new Date(endDate)) {
     console.log(`Start date ${startDate} is after end date ${endDate}. Nothing to do.`);
     return;
   }
