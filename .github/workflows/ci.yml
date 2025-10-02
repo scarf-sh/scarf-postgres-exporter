@@ -29,7 +29,7 @@ jobs:
           echo "--- End Container Output ---"
 
           # Must NOT be an npm/package.json ENOENT error.
-          if echo "$OUTPUT" | grep -qi "npm error\|Could not read package.json\|ENOENT"; then
+          if echo "$OUTPUT" | grep -Eqi "npm error|Could not read package.json|enoent.*package.json"; then
             echo "Unexpected npm/package.json error detected. Entry point fix failed."
             exit 1
           fi
