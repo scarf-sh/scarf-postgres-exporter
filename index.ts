@@ -18,26 +18,29 @@ function buildPath(startDate: string, endDate: string) {
   return `/v2/packages/${scarfEntity}/events?start_date=${startDate}&end_date=${endDate}`;
 }
 
-async function runCommand(command: string): Promise<string> {
+async function runPSQL(sql: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const process: ChildProcess = spawn("bash", ["-c", command]);
+    // Invoke psql directly with arguments to avoid shell parsing issues
+    const child: ChildProcess = spawn("psql", [DB as string, "-qtAX", "-c", sql], {
+      shell: false,
+    });
 
     let output = "";
     let errorOutput = "";
 
-    if (process.stdout) {
-      process.stdout.on("data", (data: Buffer) => {
+    if (child.stdout) {
+      child.stdout.on("data", (data: Buffer) => {
         output += data.toString();
       });
     }
 
-    if (process.stderr) {
-      process.stderr.on("data", (data: Buffer) => {
+    if (child.stderr) {
+      child.stderr.on("data", (data: Buffer) => {
         errorOutput += data.toString();
       });
     }
 
-    process.on("close", (code: number) => {
+    child.on("close", (code: number) => {
       if (code === 0) {
         resolve(output);
       } else {
@@ -51,14 +54,12 @@ async function runCommand(command: string): Promise<string> {
 async function main() {
   const tableDef = fs.readFileSync("./table-def.sql");
   const yesterday = daysAgoString(1);
-  const getLastImportedDate = formatPSQLBash(
-    `select cast(max(time) as date) from scarf_events_raw`,
-  );
+  const getLastImportedDateSQL = `select cast(max(time) as date) from scarf_events_raw`;
 
-  await runCommand(formatPSQLBash(tableDef.toString()));
+  await runPSQL(tableDef.toString());
   console.log("table created");
   const lastImportedDate =
-    (await runCommand(getLastImportedDate)).trim() ||
+    (await runPSQL(getLastImportedDateSQL)).trim() ||
     daysAgoString(defaultBackfillDays);
   if (lastImportedDate === yesterday) {
     console.log("All caught up until yesterday. Nothing to do.");
@@ -98,10 +99,8 @@ async function main() {
     "origin_state",
     "mtc_quota_exceeded"
   ].join(",");
-  await runCommand(
-    formatPSQLBash(
-      `\\copy scarf_events_raw (${fields}) FROM './${yesterday}.csv' WITH (FORMAT CSV, HEADER true)`,
-    ),
+  await runPSQL(
+    `\\copy scarf_events_raw (${fields}) FROM './${yesterday}.csv' WITH (FORMAT CSV, HEADER true)`,
   );
   console.log("done!");
 }
@@ -173,8 +172,6 @@ function dayAfter(dString: string): string {
   return formatDate(d);
 }
 
-function formatPSQLBash(command: string) {
-  return `psql ${DB} -qtAX -c "${command}"`;
-}
+// Shell-free psql invocation handled by runPSQL above
 
 main();
