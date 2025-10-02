@@ -83,9 +83,36 @@ jobs:
 
   export-scarf-data:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: scarf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" 
+          --health-interval 10s 
+          --health-timeout 5s 
+          --health-retries 5
     steps:
       - uses: docker://scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter:latest
         env:
-          SCARF_API_TOKEN: 'test'
-          SCARF_ENTITY_NAME: 'scarf'
-          PSQL_CONN_STRING: 'dummy'
+          # Real E2E using Scarf API (token in repo/org secrets)
+          SCARF_API_TOKEN: ${{ secrets.SCARF_API_TOKEN }}
+          SCARF_ENTITY_NAME: ${{ secrets.SCARF_ENTITY_NAME }}
+          BACKFILL_DAYS: "1"
+          # Connect to the GitHub Actions Postgres service by its service name
+          PSQL_CONN_STRING: 'postgres://postgres:pass@postgres:5432/scarf'
+
+      - name: Verify row imported
+        run: |
+          docker run --rm --network host postgres:15-alpine \
+            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "select to_regclass('public.scarf_events_raw') is not null" | tee exists.txt
+          OK=$(cat exists.txt | tr -d '[:space:]')
+          echo "Table exists: $OK"
+          if [ "$OK" != "t" ]; then
+            echo "Table scarf_events_raw not found — import likely failed."
+            exit 1
+          fi
