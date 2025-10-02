@@ -51,7 +51,8 @@ jobs:
         shell: bash
         run: |
           # Ensure we are not spawning a shell to run psql commands
-          if grep -R "spawn(\\\"bash\\\"" -n . || grep -R "spawn('bash'" -n .; then
+          # Limit search to source files to avoid matching this workflow text
+          if grep -R --include='*.ts' --include='*.js' -n -E "spawn\(['\"]bash['\"]" .; then
             echo "Found shell-based spawn usage. This is unsafe for connection strings with special characters."
             exit 1
           fi
