@@ -1,7 +1,7 @@
 import { ChildProcess, spawn } from "child_process";
-import fs from "fs";
+import * as fs from "fs";
 import { IncomingMessage } from "http";
-import http from "https";
+import * as http from "https";
 
 const scarfApiToken = process.env.SCARF_API_TOKEN;
 if (!scarfApiToken) throw "missing env variable: SCARF_API_TOKEN";
