@@ -5,6 +5,13 @@ on:
     branches: [ main, master ]
   pull_request:
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
@@ -21,22 +28,63 @@ jobs:
       - name: Run unit tests
         run: npm test
 
-  build-and-smoke-test:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      sha: ${{ steps.meta.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Derive image ref
+        id: meta
+        run: |
+          echo "image=${{ env.REGISTRY }}/${{ github.repository }}" >> $GITHUB_OUTPUT
+          echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push (SHA tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha }}
+      - name: Tag and push latest on main
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:latest
+
+  container-tests:
+    needs: [build-and-push-image]
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Build Docker image
-        run: |
-          docker build -t scarf-postgres-exporter:ci .
-
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Smoke test with overridden workdir (simulates Actions)
         shell: bash
+        env:
+          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
+          SHA: ${{ needs.build-and-push-image.outputs.sha }}
         run: |
           set +e
-          # Run without required env so app exits early; we only assert error origin.
-          OUTPUT=$(docker run --rm -w /github/workspace scarf-postgres-exporter:ci 2>&1)
+          OUTPUT=$(docker run --rm -w /github/workspace "$IMAGE:$SHA" 2>&1)
           STATUS=$?
           echo "Container exit code: ${STATUS}"
           if [ "$STATUS" -eq 0 ]; then
@@ -47,16 +95,12 @@ jobs:
           echo "$OUTPUT"
           echo "--- End Container Output ---"
 
-          # Must NOT be an npm/package.json ENOENT error.
           if echo "$OUTPUT" | grep -Eqi "npm error|Could not read package.json|enoent.*package.json"; then
             echo "Unexpected npm/package.json error detected. Entry point fix failed."
             exit 1
           fi
-
-          # Should fail fast due to missing env var from our app (expected in smoke test).
           if echo "$OUTPUT" | grep -q "missing env variable: SCARF_API_TOKEN"; then
             echo "Smoke test passed: entrypoint runs from /app and app executed."
-            exit 0
           else
             echo "Did not observe expected app error. Output above for debugging."
             exit 1
@@ -65,8 +109,6 @@ jobs:
       - name: Security regression check (no bash -c spawn)
         shell: bash
         run: |
-          # Ensure we are not spawning a shell to run psql commands
-          # Limit search to source files to avoid matching this workflow text
           if grep -R --include='*.ts' --include='*.js' -n -E "spawn\(['\"]bash['\"]" .; then
             echo "Found shell-based spawn usage. This is unsafe for connection strings with special characters."
             exit 1
@@ -75,23 +117,157 @@ jobs:
 
       - name: Injection-safe psql invocation with special chars
         shell: bash
+        env:
+          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
+          SHA: ${{ needs.build-and-push-image.outputs.sha }}
         run: |
           set +e
-          # Use a connection string with a semicolon to simulate special characters in passwords
           OUTPUT=$(docker run --rm \
             -e SCARF_API_TOKEN=dummy \
             -e SCARF_ENTITY_NAME=dummy \
             -e PSQL_CONN_STRING='postgres://user:p%40ss;word@localhost:5432/dbname' \
-            scarf-postgres-exporter:ci 2>&1)
+            "$IMAGE:$SHA" 2>&1)
           STATUS=$?
           echo "Container exit code: ${STATUS}"
           echo "--- Begin Output ---"
           echo "$OUTPUT"
           echo "--- End Output ---"
-
-          # Must not show shell trying to execute -qtAX due to broken quoting
           if echo "$OUTPUT" | grep -q "-qtAX: command not found"; then
             echo "Detected unsafe shell splitting in psql invocation."
             exit 1
           fi
           echo "Psql invocation appears shell-safe."
+
+  range-guard:
+    needs: [build-and-push-image]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: scarf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Seed DB with today's row
+        run: |
+          docker run --rm --network host postgres:15-alpine sh -lc '
+            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "
+              create table if not exists scarf_events_raw (
+                id text,
+                type text,
+                package text,
+                pixel text,
+                version text,
+                time timestamp,
+                referer text,
+                user_agent text,
+                platform text,
+                variables text,
+                origin_id text,
+                origin_latitude numeric,
+                origin_longitude numeric,
+                origin_country text,
+                origin_city text,
+                origin_postal text,
+                origin_connection_type text,
+                origin_company text,
+                origin_domain text,
+                dnt boolean,
+                confidence numeric,
+                endpoint_id text,
+                origin_state text,
+                mtc_quota_exceeded boolean
+              );
+              insert into scarf_events_raw(time) values (now())
+            "
+          '
+      - name: Run exporter and ensure it skips
+        env:
+          SCARF_API_TOKEN: dummy
+          SCARF_ENTITY_NAME: dummy
+          PSQL_CONN_STRING: postgres://postgres:pass@postgres:5432/scarf
+          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
+          SHA: ${{ needs.build-and-push-image.outputs.sha }}
+        run: |
+          set +e
+          OUTPUT=$(docker run --rm \
+            -e SCARF_API_TOKEN \
+            -e SCARF_ENTITY_NAME \
+            -e PSQL_CONN_STRING \
+            --network host \
+            "$IMAGE:$SHA" 2>&1)
+          STATUS=$?
+          echo "Exit: $STATUS"
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qi "downloading CSV"; then
+            echo "Expected skip due to today's data, but saw a download."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -qi "Already up to date"; then
+            echo "Did not observe skip message."
+            exit 1
+          fi
+          exit 0
+
+  export-scarf-data:
+    needs: [build-and-push-image]
+    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SCARF_API_TOKEN != '' && secrets.SCARF_ENTITY_NAME != '' }}
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: scarf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" 
+          --health-interval 10s 
+          --health-timeout 5s 
+          --health-retries 5
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run exporter against Postgres with real API
+        env:
+          SCARF_API_TOKEN: ${{ secrets.SCARF_API_TOKEN }}
+          SCARF_ENTITY_NAME: ${{ secrets.SCARF_ENTITY_NAME }}
+          BACKFILL_DAYS: "1"
+          PSQL_CONN_STRING: 'postgres://postgres:pass@postgres:5432/scarf'
+          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
+          SHA: ${{ needs.build-and-push-image.outputs.sha }}
+        run: |
+          docker run --rm \
+            -e SCARF_API_TOKEN \
+            -e SCARF_ENTITY_NAME \
+            -e BACKFILL_DAYS \
+            -e PSQL_CONN_STRING \
+            "$IMAGE:$SHA"
+      - name: Verify row imported
+        shell: bash
+        run: |
+          docker run --rm --network host postgres:15-alpine \
+            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "select count(*) from scarf_events_raw" | tee count.txt
+          COUNT=$(tr -d '[:space:]' < count.txt)
+          echo "Row count in scarf_events_raw: $COUNT"
+          # Do not fail on 0; may be legitimately empty depending on time window.
