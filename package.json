@@ -6,9 +6,6 @@
   "author": "Scarf",
   "license": "Apache 2.0",
   "main": "dist/src/index.js",
-  "engines": {
-    "node": ">=20.0.0 <21.0.0"
-  },
   "scripts": {
     "buildAndRun": "npx tsc && node dist/src/index.js",
     "test": "npx tsc && node dist/tests/run-tests.js",
