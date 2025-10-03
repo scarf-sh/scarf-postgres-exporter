@@ -81,12 +81,13 @@ jobs:
       - name: Run exporter against Postgres with real API
         if: ${{ env.SCARF_API_TOKEN != '' && env.SCARF_ENTITY_NAME != '' }}
         env:
-          BACKFILL_DAYS: "1"
-          PSQL_CONN_STRING: 'postgres://postgres:pass@postgres:5432/scarf'
+          BACKFILL_DAYS: "2"
+          # Connect via host network to the service-mapped localhost
+          PSQL_CONN_STRING: 'postgres://postgres:pass@localhost:5432/scarf'
           IMAGE: ${{ needs.build-and-push-image.outputs.image }}
           SHA: ${{ needs.build-and-push-image.outputs.sha }}
         run: |
-          docker run --rm \
+          docker run --rm --network host \
             -e SCARF_API_TOKEN="${SCARF_API_TOKEN}" \
             -e SCARF_ENTITY_NAME="${SCARF_ENTITY_NAME}" \
             -e BACKFILL_DAYS \
