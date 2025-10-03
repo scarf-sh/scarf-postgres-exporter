@@ -2,6 +2,7 @@ import { ChildProcess, spawn } from "child_process";
 import fs from "fs";
 import { IncomingMessage } from "http";
 import http from "https";
+import { computeRange } from "./logic";
 
 const scarfApiToken = process.env.SCARF_API_TOKEN;
 if (!scarfApiToken) throw "missing env variable: SCARF_API_TOKEN";
@@ -61,21 +62,14 @@ async function main() {
   const lastImportedDate =
     (await runPSQL(getLastImportedDateSQL)).trim() ||
     daysAgoString(defaultBackfillDays);
-  // If we already imported data for yesterday or later (e.g., today), skip.
-  if (lastImportedDate >= yesterday) {
+  const plan = computeRange(lastImportedDate, yesterday);
+  if (plan.skip) {
     console.log("Already up to date. Nothing to do.");
     return;
   }
   console.log(`lastImportedDate: ${lastImportedDate}`);
-  // Determine date range: from the day after last import up through yesterday
-  const startDate = dayAfter(lastImportedDate + "T00:00:00");
-  const endDate = yesterday;
-  if (new Date(startDate) > new Date(endDate)) {
-    console.log(`Start date ${startDate} is after end date ${endDate}. Nothing to do.`);
-    return;
-  }
   console.log(`downloading CSV`);
-  await downloadCSV(buildPath(startDate, endDate), yesterday);
+  await downloadCSV(buildPath(plan.start, plan.end), yesterday);
   console.log("csv downloaded");
   console.log("importing CSV into postgres");
   const fields = [
@@ -169,12 +163,6 @@ function formatDate(d: Date) {
   if (day.length < 2) day = "0" + day;
 
   return [year, month, day].join("-");
-}
-
-function dayAfter(dString: string): string {
-  const d = new Date(dString);
-  d.setDate(d.getDate() + 1);
-  return formatDate(d);
 }
 
 // Shell-free psql invocation handled by runPSQL above

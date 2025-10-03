@@ -5,5 +5,5 @@ set -euo pipefail
 # which breaks npm-based commands that expect /app. We force the CWD here.
 cd /app
 
-exec node index.js
-
+# compiled output lives in dist/src
+exec node dist/src/index.js

@@ -5,78 +5,114 @@ on:
     branches: [ main, master ]
   pull_request:
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
 jobs:
-  build-and-smoke-test:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      sha: ${{ steps.meta.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Derive image ref
+        id: meta
+        run: |
+          echo "image=${{ env.REGISTRY }}/${{ github.repository }}" >> $GITHUB_OUTPUT
+          echo "sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push (SHA tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha }}
+      - name: Tag and push latest on main
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:latest
+
+  
+
+  export-scarf-data:
+    needs: [build-and-push-image]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: scarf
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" 
+          --health-interval 10s 
+          --health-timeout 5s 
+          --health-retries 5
+    env:
+      SCARF_API_TOKEN: ${{ secrets.SCARF_API_TOKEN }}
+      SCARF_ENTITY_NAME: ${{ secrets.SCARF_ENTITY_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run exporter against Postgres with real API
+        if: ${{ env.SCARF_API_TOKEN != '' && env.SCARF_ENTITY_NAME != '' }}
+        env:
+          BACKFILL_DAYS: "2"
+          # Connect via host network to the service-mapped localhost
+          PSQL_CONN_STRING: 'postgres://postgres:pass@localhost:5432/scarf'
+          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
+          SHA: ${{ needs.build-and-push-image.outputs.sha }}
+        run: |
+          docker run --rm --network host \
+            -e SCARF_API_TOKEN="${SCARF_API_TOKEN}" \
+            -e SCARF_ENTITY_NAME="${SCARF_ENTITY_NAME}" \
+            -e BACKFILL_DAYS \
+            -e PSQL_CONN_STRING \
+            "$IMAGE:$SHA"
+      - name: Verify row imported
+        if: ${{ env.SCARF_API_TOKEN != '' && env.SCARF_ENTITY_NAME != '' }}
+        run: bash scripts/verify_import_count.sh "postgres://postgres:pass@localhost:5432/scarf"
+
+  tests:
+    needs: [build-and-push-image]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Build Docker image
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Run all tests
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker build -t scarf-postgres-exporter:ci .
-
-      - name: Smoke test with overridden workdir (simulates Actions)
-        shell: bash
-        run: |
-          set +e
-          # Run without required env so app exits early; we only assert error origin.
-          OUTPUT=$(docker run --rm -w /github/workspace scarf-postgres-exporter:ci 2>&1)
-          STATUS=$?
-          echo "Container exit code: ${STATUS}"
-          if [ "$STATUS" -eq 0 ]; then
-            echo "ERROR: Container exited with code 0, but expected non-zero due to missing env var."
-            exit 1
-          fi
-          echo "--- Begin Container Output ---"
-          echo "$OUTPUT"
-          echo "--- End Container Output ---"
-
-          # Must NOT be an npm/package.json ENOENT error.
-          if echo "$OUTPUT" | grep -Eqi "npm error|Could not read package.json|enoent.*package.json"; then
-            echo "Unexpected npm/package.json error detected. Entry point fix failed."
-            exit 1
-          fi
-
-          # Should fail fast due to missing env var from our app (expected in smoke test).
-          if echo "$OUTPUT" | grep -q "missing env variable: SCARF_API_TOKEN"; then
-            echo "Smoke test passed: entrypoint runs from /app and app executed."
-            exit 0
-          else
-            echo "Did not observe expected app error. Output above for debugging."
-            exit 1
-          fi
-
-      - name: Security regression check (no bash -c spawn)
-        shell: bash
-        run: |
-          # Ensure we are not spawning a shell to run psql commands
-          # Limit search to source files to avoid matching this workflow text
-          if grep -R --include='*.ts' --include='*.js' -n -E "spawn\(['\"]bash['\"]" .; then
-            echo "Found shell-based spawn usage. This is unsafe for connection strings with special characters."
-            exit 1
-          fi
-          echo "No bash-based spawn usage detected."
-
-      - name: Injection-safe psql invocation with special chars
-        shell: bash
-        run: |
-          set +e
-          # Use a connection string with a semicolon to simulate special characters in passwords
-          OUTPUT=$(docker run --rm \
-            -e SCARF_API_TOKEN=dummy \
-            -e SCARF_ENTITY_NAME=dummy \
-            -e PSQL_CONN_STRING='postgres://user:p%40ss;word@localhost:5432/dbname' \
-            scarf-postgres-exporter:ci 2>&1)
-          STATUS=$?
-          echo "Container exit code: ${STATUS}"
-          echo "--- Begin Output ---"
-          echo "$OUTPUT"
-          echo "--- End Output ---"
-
-          # Must not show shell trying to execute -qtAX due to broken quoting
-          if echo "$OUTPUT" | grep -q "-qtAX: command not found"; then
-            echo "Detected unsafe shell splitting in psql invocation."
-            exit 1
-          fi
-          echo "Psql invocation appears shell-safe."
+          bash scripts/run_all_tests.sh "${{ needs.build-and-push-image.outputs.image }}:${{ needs.build-and-push-image.outputs.sha }}"

@@ -9,6 +9,8 @@
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": false,
+    "outDir": "dist",
+    "rootDir": ".",
     "esModuleInterop": true,
     "module": "commonjs",
     "moduleResolution": "node",
@@ -21,6 +23,6 @@
     },
     "incremental": true
   },
-  "exclude": ["node_modules"],
-  "moduleResolution": ["node_modules", "node"]
+  "include": ["src", "tests"],
+  "exclude": ["node_modules", "dist"]
 }
