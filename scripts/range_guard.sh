@@ -22,9 +22,13 @@ docker run -d --rm --name "$NAME" -e POSTGRES_PASSWORD=pass -e POSTGRES_DB=scarf
 log "Waiting for postgres"
 docker run --rm --network host postgres:15-alpine sh -lc 'until pg_isready -h localhost -U postgres >/dev/null 2>&1; do sleep 1; done'
 
+log "Applying schema from table-def.sql"
+docker run --rm --network host -v "$PWD/table-def.sql":/tmp/table-def.sql:ro postgres:15-alpine \
+  sh -lc 'psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -f /tmp/table-def.sql'
+
 log "Seeding today's row"
 docker run --rm --network host postgres:15-alpine \
-  psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "create table if not exists scarf_events_raw (id text, type text, package text, pixel text, version text, time timestamp, referer text, user_agent text, platform text, variables text, origin_id text, origin_latitude numeric, origin_longitude numeric, origin_country text, origin_city text, origin_postal text, origin_connection_type text, origin_company text, origin_domain text, dnt boolean, confidence numeric, endpoint_id text, origin_state text, mtc_quota_exceeded boolean); insert into scarf_events_raw(time) values (now());"
+  psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "insert into scarf_events_raw(time) values (now());"
 
 set +e
 OUTPUT=$(docker run --rm \
@@ -46,4 +50,3 @@ if ! echo "$OUTPUT" | grep -qi "Already up to date"; then
   exit 1
 fi
 log "Range guard passed"
-

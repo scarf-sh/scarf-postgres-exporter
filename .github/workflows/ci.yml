@@ -115,19 +115,6 @@ jobs:
   range-guard:
     needs: [build-and-push-image]
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DB: scarf
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -137,39 +124,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Seed DB with today's row
-        run: |
-          docker run --rm --network host postgres:15-alpine sh -lc '
-            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "
-              create table if not exists scarf_events_raw (
-                id text,
-                type text,
-                package text,
-                pixel text,
-                version text,
-                time timestamp,
-                referer text,
-                user_agent text,
-                platform text,
-                variables text,
-                origin_id text,
-                origin_latitude numeric,
-                origin_longitude numeric,
-                origin_country text,
-                origin_city text,
-                origin_postal text,
-                origin_connection_type text,
-                origin_company text,
-                origin_domain text,
-                dnt boolean,
-                confidence numeric,
-                endpoint_id text,
-                origin_state text,
-                mtc_quota_exceeded boolean
-              );
-              insert into scarf_events_raw(time) values (now())
-            "
-          '
       - name: Run range guard
         run: bash scripts/range_guard.sh "${{ needs.build-and-push-image.outputs.image }}:${{ needs.build-and-push-image.outputs.sha }}"
 
