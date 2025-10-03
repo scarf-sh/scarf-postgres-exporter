@@ -13,21 +13,6 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  unit-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - name: Install deps
-        run: npm ci
-      - name: Run unit tests
-        run: npm test
-
   build-and-push-image:
     runs-on: ubuntu-latest
     outputs:
@@ -64,68 +49,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.image }}:latest
 
-  container-tests:
-    needs: [build-and-push-image]
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Smoke test with overridden workdir (simulates Actions)
-        shell: bash
-        env:
-          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
-          SHA: ${{ needs.build-and-push-image.outputs.sha }}
-        run: |
-          set +e
-          OUTPUT=$(docker run --rm -w /github/workspace "$IMAGE:$SHA" 2>&1)
-          STATUS=$?
-          echo "Container exit code: ${STATUS}"
-          if [ "$STATUS" -eq 0 ]; then
-            echo "ERROR: Container exited with code 0, but expected non-zero due to missing env var."
-            exit 1
-          fi
-          echo "--- Begin Container Output ---"
-          echo "$OUTPUT"
-          echo "--- End Container Output ---"
-
-          if echo "$OUTPUT" | grep -Eqi "npm error|Could not read package.json|enoent.*package.json"; then
-            echo "Unexpected npm/package.json error detected. Entry point fix failed."
-            exit 1
-          fi
-          if echo "$OUTPUT" | grep -q "missing env variable: SCARF_API_TOKEN"; then
-            echo "Smoke test passed: entrypoint runs from /app and app executed."
-          else
-            echo "Did not observe expected app error. Output above for debugging."
-            exit 1
-          fi
-
-      - name: Security regression check (no bash -c spawn)
-        run: bash scripts/check_no_shell_spawn.sh
-
-      - name: Injection-safe psql invocation with special chars
-        run: bash scripts/test_psql_injection.sh "${{ needs.build-and-push-image.outputs.image }}:${{ needs.build-and-push-image.outputs.sha }}"
-
-  range-guard:
-    needs: [build-and-push-image]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Run range guard
-        run: bash scripts/range_guard.sh "${{ needs.build-and-push-image.outputs.image }}:${{ needs.build-and-push-image.outputs.sha }}"
+  
 
   export-scarf-data:
     needs: [build-and-push-image]
@@ -171,3 +95,21 @@ jobs:
       - name: Verify row imported
         if: ${{ env.SCARF_API_TOKEN != '' && env.SCARF_ENTITY_NAME != '' }}
         run: bash scripts/verify_import_count.sh "postgres://postgres:pass@localhost:5432/scarf"
+
+  tests:
+    needs: [build-and-push-image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Run all tests
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/run_all_tests.sh "${{ needs.build-and-push-image.outputs.image }}:${{ needs.build-and-push-image.outputs.sha }}"
