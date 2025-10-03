@@ -107,36 +107,10 @@ jobs:
           fi
 
       - name: Security regression check (no bash -c spawn)
-        shell: bash
-        run: |
-          if grep -R --include='*.ts' --include='*.js' -n -E "spawn\(['\"]bash['\"]" .; then
-            echo "Found shell-based spawn usage. This is unsafe for connection strings with special characters."
-            exit 1
-          fi
-          echo "No bash-based spawn usage detected."
+        run: bash scripts/check_no_shell_spawn.sh
 
       - name: Injection-safe psql invocation with special chars
-        shell: bash
-        env:
-          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
-          SHA: ${{ needs.build-and-push-image.outputs.sha }}
-        run: |
-          set +e
-          OUTPUT=$(docker run --rm \
-            -e SCARF_API_TOKEN=dummy \
-            -e SCARF_ENTITY_NAME=dummy \
-            -e PSQL_CONN_STRING='postgres://user:p%40ss;word@localhost:5432/dbname' \
-            "$IMAGE:$SHA" 2>&1)
-          STATUS=$?
-          echo "Container exit code: ${STATUS}"
-          echo "--- Begin Output ---"
-          echo "$OUTPUT"
-          echo "--- End Output ---"
-          if echo "$OUTPUT" | grep -q "-qtAX: command not found"; then
-            echo "Detected unsafe shell splitting in psql invocation."
-            exit 1
-          fi
-          echo "Psql invocation appears shell-safe."
+        run: bash scripts/test_psql_injection.sh "${{ needs.build-and-push-image.outputs.image }}:${{ needs.build-and-push-image.outputs.sha }}"
 
   range-guard:
     needs: [build-and-push-image]
@@ -196,38 +170,13 @@ jobs:
               insert into scarf_events_raw(time) values (now())
             "
           '
-      - name: Run exporter and ensure it skips
-        env:
-          SCARF_API_TOKEN: dummy
-          SCARF_ENTITY_NAME: dummy
-          PSQL_CONN_STRING: postgres://postgres:pass@postgres:5432/scarf
-          IMAGE: ${{ needs.build-and-push-image.outputs.image }}
-          SHA: ${{ needs.build-and-push-image.outputs.sha }}
-        run: |
-          set +e
-          OUTPUT=$(docker run --rm \
-            -e SCARF_API_TOKEN \
-            -e SCARF_ENTITY_NAME \
-            -e PSQL_CONN_STRING \
-            --network host \
-            "$IMAGE:$SHA" 2>&1)
-          STATUS=$?
-          echo "Exit: $STATUS"
-          echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qi "downloading CSV"; then
-            echo "Expected skip due to today's data, but saw a download."
-            exit 1
-          fi
-          if ! echo "$OUTPUT" | grep -qi "Already up to date"; then
-            echo "Did not observe skip message."
-            exit 1
-          fi
-          exit 0
+      - name: Run range guard
+        run: bash scripts/range_guard.sh "${{ needs.build-and-push-image.outputs.image }}:${{ needs.build-and-push-image.outputs.sha }}"
 
   export-scarf-data:
     needs: [build-and-push-image]
     runs-on: ubuntu-latest
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.SCARF_API_TOKEN != '' && secrets.SCARF_ENTITY_NAME != '' }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     services:
       postgres:
         image: postgres:15-alpine
@@ -249,6 +198,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Run exporter against Postgres with real API
+        if: ${{ secrets.SCARF_API_TOKEN != '' && secrets.SCARF_ENTITY_NAME != '' }}
         env:
           SCARF_API_TOKEN: ${{ secrets.SCARF_API_TOKEN }}
           SCARF_ENTITY_NAME: ${{ secrets.SCARF_ENTITY_NAME }}
@@ -264,10 +214,5 @@ jobs:
             -e PSQL_CONN_STRING \
             "$IMAGE:$SHA"
       - name: Verify row imported
-        shell: bash
-        run: |
-          docker run --rm --network host postgres:15-alpine \
-            psql "postgres://postgres:pass@localhost:5432/scarf" -qtAX -c "select count(*) from scarf_events_raw" | tee count.txt
-          COUNT=$(tr -d '[:space:]' < count.txt)
-          echo "Row count in scarf_events_raw: $COUNT"
-          # Do not fail on 0; may be legitimately empty depending on time window.
+        if: ${{ secrets.SCARF_API_TOKEN != '' && secrets.SCARF_ENTITY_NAME != '' }}
+        run: bash scripts/verify_import_count.sh "postgres://postgres:pass@localhost:5432/scarf"
