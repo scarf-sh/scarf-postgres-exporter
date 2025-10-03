@@ -10,7 +10,8 @@ export function computeRange(lastImportedDate: string, yesterday: string): Range
     return { skip: true };
   }
 
-  const start = dayAfter(lastImportedDate + "T00:00:00");
+  // Compute the day after the last imported date.
+  const start = dayAfter(lastImportedDate);
   const end = yesterday;
 
   if (start > end) {
@@ -29,9 +30,11 @@ function formatDate(d: Date) {
   return [year, month, day].join("-");
 }
 
-function dayAfter(dString: string): string {
-  const d = new Date(dString);
+// Returns the date string (YYYY-MM-DD) for the day after the given date-only string.
+// Accepts a date-only string (YYYY-MM-DD) and anchors it to midnight UTC internally
+// to avoid callers needing to append a time component.
+export function dayAfter(dateOnly: string): string {
+  const d = new Date(dateOnly + "T00:00:00");
   d.setDate(d.getDate() + 1);
   return formatDate(d);
 }
-

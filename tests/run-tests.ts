@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { computeRange } from '../src/logic';
+import { computeRange, dayAfter } from '../src/logic';
 
 function test(name: string, fn: () => void) {
   try {
@@ -9,15 +9,6 @@ function test(name: string, fn: () => void) {
     console.error(`not ok - ${name}`);
     throw e;
   }
-}
-
-function dayAfter(d: string): string {
-  const dt = new Date(d + 'T00:00:00');
-  dt.setDate(dt.getDate() + 1);
-  const yyyy = dt.getFullYear();
-  const mm = String(dt.getMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 // Fixed reference date to make tests deterministic
