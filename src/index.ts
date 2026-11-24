@@ -1,7 +1,12 @@
 import { ChildProcess, spawn } from "child_process";
 import fs from "fs";
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 import { IncomingMessage } from "http";
+import { pipeline } from "stream/promises";
 import http from "https";
+import { csvImportCommands, readCsvColumns } from "./csv-import";
 import { computeRange } from "./logic";
 
 const scarfApiToken = process.env.SCARF_API_TOKEN;
@@ -19,12 +24,22 @@ function buildPath(startDate: string, endDate: string) {
   return `/v2/packages/${scarfEntity}/events?start_date=${startDate}&end_date=${endDate}`;
 }
 
-async function runPSQL(sql: string): Promise<string> {
+async function runPSQL(sql: string | string[], cwd?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     // Invoke psql directly with arguments to avoid shell parsing issues
-    const child: ChildProcess = spawn("psql", [DB as string, "-qtAX", "-c", sql], {
-      shell: false,
-    });
+    const commands = typeof sql === "string" ? [sql] : sql;
+    const child: ChildProcess = spawn(
+      "psql",
+      [
+        DB as string,
+        "-XqtA",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "--single-transaction",
+        ...commands.flatMap((command) => ["-c", command]),
+      ],
+      { cwd, shell: false },
+    );
 
     let output = "";
     let errorOutput = "";
@@ -41,6 +56,7 @@ async function runPSQL(sql: string): Promise<string> {
       });
     }
 
+    child.on("error", reject);
     child.on("close", (code: number) => {
       if (code === 0) {
         resolve(output);
@@ -68,84 +84,40 @@ async function main() {
     return;
   }
   console.log(`lastImportedDate: ${lastImportedDate}`);
-  console.log(`downloading CSV`);
-  await downloadCSV(buildPath(plan.start, plan.end), yesterday);
-  console.log("csv downloaded");
-  console.log("importing CSV into postgres");
-  const fields = [
-    "id",
-    "type",
-    "package",
-    "pixel",
-    "version",
-    "time",
-    "referer",
-    "user_agent",
-    "platform",
-    "variables",
-    "origin_id",
-    "origin_latitude",
-    "origin_longitude",
-    "origin_country",
-    "origin_city",
-    "origin_postal",
-    "origin_connection_type",
-    "origin_company",
-    "origin_domain",
-    "dnt",
-    "confidence",
-    "endpoint_id",
-    "origin_state",
-    "mtc_quota_exceeded"
-  ].join(",");
-  await runPSQL(
-    `\\copy scarf_events_raw (${fields}) FROM './${yesterday}.csv' WITH (FORMAT CSV, HEADER true)`,
-  );
+  const directory = await mkdtemp(join(tmpdir(), "scarf-export-"));
+  try {
+    const csvPath = join(directory, "events.csv");
+    console.log("downloading CSV");
+    await downloadCSV(buildPath(plan.start, plan.end), csvPath);
+    console.log("importing CSV into postgres");
+    await runPSQL(csvImportCommands(await readCsvColumns(csvPath)), directory);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
   console.log("done!");
 }
 
-async function downloadCSV(path: string, csvName: string): Promise<void> {
-  const file = fs.createWriteStream(`${csvName}.csv`);
+async function downloadCSV(path: string, csvPath: string): Promise<void> {
   console.log(`Downloading CSV from ${path}`);
-
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: "api.scarf.sh",
-      path,
-      headers: {
-        Authorization: `Bearer ${scarfApiToken}`,
-        "Content-Type": "application/json",
+  const response = await new Promise<IncomingMessage>((resolve, reject) => {
+    const request = http.get(
+      {
+        hostname: "api.scarf.sh",
+        path,
+        headers: {
+          Authorization: `Bearer ${scarfApiToken}`,
+          "Content-Type": "application/json",
+        },
       },
-    };
-
-    http.get(options, function (response: IncomingMessage) {
-      if (response.statusCode !== 200) {
-        console.log(`Response code: ${response.statusCode}`);
-        let data = "";
-        response.on("data", (chunk: Buffer) => {
-          data += chunk;
-        });
-        response.on("end", () => {
-          console.log(data);
-          reject("non 200 response from Scarf. Check your auth token");
-        });
-      }
-
-      response.pipe(file);
-
-      file.on("error", (err: NodeJS.ErrnoException) => {
-        file.close();
-        console.error(`Error downloading CSV: ${err}`);
-        reject(err);
-      });
-
-      file.on("finish", () => {
-        file.close();
-        console.log("Download Completed");
-        resolve();
-      });
-    });
+      resolve,
+    );
+    request.on("error", reject);
   });
+  if (response.statusCode !== 200) {
+    response.resume();
+    throw new Error(`Scarf export failed with HTTP ${response.statusCode}`);
+  }
+  await pipeline(response, fs.createWriteStream(csvPath));
 }
 
 function daysAgoString(n: number): string {

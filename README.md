@@ -43,6 +43,35 @@ $ docker run \
    scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter
 ```
 
+## Event counts and upgrading
+
+`scarf_events_raw` contains source records. Use `COUNT(*)` for the number
+of records and `SUM(num_events)` for the total event weight when all included
+rows have known weights. Check for unknown weights with
+`COUNT(*) FILTER (WHERE num_events IS NULL)`. For Sonatype, one source record
+can represent multiple downloads. It does not identify individual users or
+per-download timestamps.
+
+The exporter adds a nullable `bigint` column to existing tables on startup.
+The database role must own the destination table (or a DBA can apply
+`table-def.sql` before running the updated exporter). Old CSVs and existing
+rows have unknown (`NULL`) weight until you re-import the weighted CSV for
+the same records. The regular daily job continues from its existing checkpoint
+and does not re-export history. For historical reconciliation, re-export the
+dates you need into an empty destination, or reconcile the weighted files
+against your existing table explicitly.
+
+Retries match on request ID, event type, package, pixel, and timestamp. A
+weighted re-import updates the stored weight, and a legacy CSV leaves known
+weights intact. The importer does not remove duplicate rows already present
+from older exporter versions. An optional `ip_address` field is accepted
+and discarded.
+
+Upgrade and verify this exporter image before the Scarf CSV change is turned
+on. This image accepts both CSV shapes. If you pin an older image or use a
+positional CSV/COPY consumer, upgrade the image or update the column mapping
+before receiving exports with the new trailing `num_events` field.
+
 ## Configuring on GitHub Actions
 
 You can use GitHub Actions `cron` functionality to run this exporter periodically in your GitHub repo with an action like this:

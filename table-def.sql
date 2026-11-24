@@ -26,3 +26,16 @@ create table if not exists
     origin_state text,
     mtc_quota_exceeded boolean
   );
+
+-- Legacy CSV records have unknown multiplicity until re-imported.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_attribute
+    WHERE attrelid = 'scarf_events_raw'::regclass
+      AND attname = 'num_events'
+      AND NOT attisdropped
+  ) THEN
+    ALTER TABLE scarf_events_raw ADD COLUMN IF NOT EXISTS num_events bigint;
+  END IF;
+END $$;
