@@ -1,7 +1,7 @@
 import { createReadStream } from "fs";
 import { createInterface } from "readline";
 
-const legacyColumns = [
+export const legacyColumns = [
   "id",
   "type",
   "package",

@@ -6,7 +6,7 @@ import { join } from "path";
 import { IncomingMessage } from "http";
 import { pipeline } from "stream/promises";
 import http from "https";
-import { csvImportCommands, readCsvColumns } from "./csv-import";
+import { csvImportCommands, legacyColumns, readCsvColumns } from "./csv-import";
 import { computeRange } from "./logic";
 
 const scarfApiToken = process.env.SCARF_API_TOKEN;
@@ -68,13 +68,64 @@ async function runPSQL(sql: string | string[], cwd?: string): Promise<string> {
   });
 }
 
+async function validateManagedSchema() {
+  // The import matches rows by ctid, which is only unique within one table.
+  const target = "scarf_events_raw";
+  try {
+    const valid = await runPSQL([
+      "SET TRANSACTION READ ONLY",
+      `SELECT ${[...legacyColumns, "num_events"].join(", ")}
+       FROM ${target} LIMIT 0`,
+      `SELECT 'ready'
+       FROM pg_catalog.pg_class AS target
+       JOIN pg_catalog.pg_attribute AS weight ON weight.attrelid = target.oid
+       WHERE target.oid = '${target}'::pg_catalog.regclass
+         AND target.relkind = 'r'
+         AND NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_inherits
+           WHERE inhparent = target.oid OR inhrelid = target.oid
+         )
+         AND weight.attname = 'num_events'
+         AND NOT weight.attisdropped
+         AND weight.atttypid = 'pg_catalog.int8'::pg_catalog.regtype
+         AND NOT weight.attnotnull
+         AND weight.attgenerated = ''
+         AND NOT pg_catalog.row_security_active(target.oid)
+         AND pg_catalog.has_database_privilege(current_database(), 'TEMP')
+         AND pg_catalog.has_table_privilege(target.oid, 'SELECT')
+         AND pg_catalog.has_table_privilege(target.oid, 'INSERT')
+         AND pg_catalog.has_table_privilege(target.oid, 'UPDATE')`,
+    ]);
+    if (valid.trim() !== "ready") {
+      throw new Error("Invalid table, num_events column, or role privileges.");
+    }
+  } catch (error) {
+    throw new Error(
+      "DBA-managed schema validation failed. Have your DBA apply table-def.sql " +
+        "in the destination schema and verify scarf_events_raw is visible on " +
+        "the exporter's search_path as a standalone ordinary table without " +
+        "inheritance or partitioning, with a nullable bigint num_events column " +
+        "that is not generated, and no active row-level security. " +
+        "The exporter needs schema USAGE, " +
+        "database TEMP, and table-level SELECT, INSERT and UPDATE.",
+      { cause: error },
+    );
+  }
+}
+
 async function main() {
-  const tableDef = fs.readFileSync("./table-def.sql");
   const yesterday = daysAgoString(1);
   const getLastImportedDateSQL = `select cast(max(time) as date) from scarf_events_raw`;
 
-  await runPSQL(tableDef.toString());
-  console.log("table created");
+  const managedSchema = process.env.DBA_MANAGED_SCHEMA;
+  if (managedSchema === "true") {
+    await validateManagedSchema();
+  } else if (managedSchema === undefined || managedSchema === "false") {
+    await runPSQL(fs.readFileSync("./table-def.sql", "utf8"));
+    console.log("table created");
+  } else {
+    throw new Error("DBA_MANAGED_SCHEMA must be true or false.");
+  }
   const lastImportedDate =
     (await runPSQL(getLastImportedDateSQL)).trim() ||
     daysAgoString(defaultBackfillDays);
