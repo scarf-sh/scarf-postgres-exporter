@@ -71,7 +71,8 @@ export function csvImportCommands(columns: string[]): string[] {
   const eventKey = key.join(", ");
   const incomingKey = key.map((column) => `incoming.${column}`).join(", ");
   return [
-    "CREATE TEMP TABLE scarf_events_incoming (LIKE scarf_events_raw, ip_address text) ON COMMIT DROP",
+    `CREATE TEMP TABLE scarf_events_incoming ON COMMIT DROP AS
+      SELECT ${stored}, NULL::text AS ip_address FROM scarf_events_raw WITH NO DATA`,
     "ALTER TABLE scarf_events_incoming ALTER COLUMN id SET NOT NULL",
     `\\copy scarf_events_incoming (${columns.join(
       ", ",

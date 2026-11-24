@@ -73,6 +73,9 @@ async function testImport() {
       "INSERT INTO scarf_events_raw (id,type,package,time) VALUES ('shared','sonatype','axon-messaging','2026-11-11 10:00:00')",
     );
     psql(tableDefinition);
+    psql(
+      "ALTER TABLE scarf_events_raw ADD COLUMN customer_label text NOT NULL DEFAULT 'imported'",
+    );
     assert.equal(psql(summary), "1|0|");
     const legacy = `${legacyHeader}\r\n${row(sonatype)}\r\n`;
     await importCsv(legacy);
