@@ -40,8 +40,56 @@ $ docker run \
     -e SCARF_ENTITY_NAME=<>\
     -e PSQL_CONN_STRING=<> \
     -e BACKFILL_DAYS=<> \
+    -e DBA_MANAGED_SCHEMA=<true-or-false> \
    scarf.docker.scarf.sh/scarf-sh/scarf-postgres-exporter
 ```
+
+## Event counts and upgrading
+
+`scarf_events_raw` contains source records. Use `COUNT(*)` for the number
+of records and `SUM(num_events)` for the total event weight when all included
+rows have known weights. Check for unknown weights with
+`COUNT(*) FILTER (WHERE num_events IS NULL)`. For Sonatype, one source record
+can represent multiple downloads. It does not identify individual users or
+per-download timestamps.
+
+By default the exporter creates the destination table or adds the nullable
+`bigint` weight column on startup. This mode needs schema `CREATE` and table
+ownership for upgrades. If your DBA manages schema changes, use this workflow
+instead:
+
+1. Have the DBA apply `table-def.sql` in the destination schema (including on
+   existing tables). Set the exporter's `search_path` so
+   `scarf_events_raw` resolves to that table in a trusted schema. Do not give
+   untrusted users `CREATE` in schemas on that path.
+2. Grant the non-owner exporter login `CONNECT` and `TEMP` on the database,
+   `USAGE` on the schema, and table-level `SELECT`, `INSERT` and `UPDATE`
+   on that table. No schema `CREATE`, table ownership, `DELETE` or
+   `TRUNCATE` is needed. Table-level `UPDATE` (not just
+   `UPDATE (num_events)`) is required for the table lock that serializes
+   imports. Use a standalone, non-partitioned table with no inheritance
+   relationships and no active row-level security for this login.
+   `num_events` must be a nullable `bigint`, not a generated column.
+3. Set `DBA_MANAGED_SCHEMA=true` on the exporter. It validates the destination
+   before downloading any CSV and does not create or alter persistent tables.
+   Omit the variable or set it to `false` to use the default startup.
+
+Old CSVs and existing rows have unknown (`NULL`) weight until you re-import
+the weighted CSV for the same records. The regular daily job continues from its existing checkpoint
+and does not re-export history. For historical reconciliation, re-export the
+dates you need into an empty destination, or reconcile the weighted files
+against your existing table explicitly.
+
+Retries match on request ID, event type, package, pixel, and timestamp. A
+weighted re-import updates the stored weight, and a legacy CSV leaves known
+weights intact. The importer does not remove duplicate rows already present
+from older exporter versions. An optional `ip_address` field is accepted
+and discarded.
+
+Upgrade and verify this exporter image before the Scarf CSV change is turned
+on. This image accepts both CSV shapes. If you pin an older image or use a
+positional CSV/COPY consumer, upgrade the image or update the column mapping
+before receiving exports with the new trailing `num_events` field.
 
 ## Configuring on GitHub Actions
 

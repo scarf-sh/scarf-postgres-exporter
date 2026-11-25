@@ -80,6 +80,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Node for Postgres import tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Test legacy and weighted CSV import
+        env:
+          TEST_POSTGRES_URL: 'postgres://postgres:pass@localhost:5432/scarf'
+        run: |
+          npm ci
+          npm test
+          node dist/tests/postgres-import.js
       - name: Run exporter against Postgres with real API
         if: ${{ env.SCARF_API_TOKEN != '' && env.SCARF_ENTITY_NAME != '' }}
         env:
