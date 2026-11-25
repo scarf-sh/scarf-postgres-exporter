@@ -69,7 +69,6 @@ async function runPSQL(sql: string | string[], cwd?: string): Promise<string> {
 }
 
 async function validateManagedSchema() {
-  // The import matches rows by ctid, which is only unique within one table.
   const target = "scarf_events_raw";
   try {
     const valid = await runPSQL([

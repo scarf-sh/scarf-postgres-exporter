@@ -236,6 +236,28 @@ async function testImport() {
     await installMock(weighted);
     expectExport(owner.toString());
     assert.equal(psql(summary), "2|2|8");
+
+    // Different partitions can store unrelated events at the same ctid.
+    psql(
+      "DROP TABLE scarf_events_raw",
+      baseDefinition.trimEnd().replace(/;$/, " PARTITION BY LIST (type);"),
+      "CREATE TABLE sonatype_events PARTITION OF scarf_events_raw FOR VALUES IN ('sonatype')",
+      "CREATE TABLE download_events PARTITION OF scarf_events_raw FOR VALUES IN ('file_download')",
+      `INSERT INTO scarf_events_raw (id,type,package,time) VALUES
+        ('shared','sonatype','axon-messaging','${eventTime}'),
+        ('shared','file_download','other','${eventTime}')`,
+    );
+    assert.equal(
+      psql("SELECT count(DISTINCT ctid) FROM scarf_events_raw"),
+      "1",
+    );
+    await installMock(`${legacyHeader},num_events\n${row(sonatype)},7\n`);
+    expectExport(owner.toString());
+    expectExport(owner.toString());
+    assert.equal(
+      psql("SELECT type, num_events FROM scarf_events_raw ORDER BY type"),
+      "file_download|\nsonatype|7",
+    );
     console.log("Postgres CSV import checks passed.");
   } finally {
     try {

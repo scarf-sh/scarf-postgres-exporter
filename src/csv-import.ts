@@ -93,17 +93,19 @@ export function csvImportCommands(columns: string[]): string[] {
     "ANALYZE scarf_events_batch",
     // Serialize the check and write across concurrent exporter processes.
     "LOCK TABLE scarf_events_raw IN SHARE ROW EXCLUSIVE MODE",
+    // Tuple locations are unique only within each physical table.
     `UPDATE scarf_events_raw AS target SET num_events = matched.num_events
       FROM (
         SELECT DISTINCT ON (${incomingKey})
-          incoming.num_events, existing.ctid
+          incoming.num_events, existing.tableoid, existing.ctid
         FROM scarf_events_batch AS incoming
         JOIN scarf_events_raw AS existing ON ${joinKey}
         WHERE incoming.num_events IS NOT NULL
         ORDER BY ${incomingKey},
-          existing.num_events IS NULL, existing.ctid
+          existing.num_events IS NULL, existing.tableoid, existing.ctid
       ) AS matched
-      WHERE target.ctid = matched.ctid AND target.num_events IS DISTINCT FROM matched.num_events`,
+      WHERE target.tableoid = matched.tableoid AND target.ctid = matched.ctid
+        AND target.num_events IS DISTINCT FROM matched.num_events`,
     `INSERT INTO scarf_events_raw (${stored})
       SELECT ${stored} FROM scarf_events_batch AS incoming
       WHERE NOT EXISTS (SELECT 1 FROM scarf_events_raw AS existing WHERE ${joinKey})`,
